@@ -619,6 +619,10 @@ ngx_stream_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ls->ipv6only = 1;
 #endif
 
+#if (NGX_HAVE_TRANSPARENT_PROXY && defined IP_TRANSPARENT)
+    ls->tproxy = 0;
+#endif
+
     backlog = 0;
 
     for (i = 2; i < cf->args->nelts; i++) {
@@ -679,6 +683,16 @@ ngx_stream_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
                 return NGX_CONF_ERROR;
             }
 
+            continue;
+        }
+        if (ngx_strcmp(value[i].data, "tproxy") == 0) {
+#if (NGX_HAVE_TRANSPARENT_PROXY && defined IP_TRANSPARENT)
+            ls->tproxy = 1;
+#else
+            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                               "transparent mode is not supported "
+                               "on this platform, ignore tproxy");
+#endif
             continue;
         }
 
@@ -859,6 +873,15 @@ ngx_stream_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         if (ls->proxy_protocol) {
             return "\"proxy_protocol\" parameter is incompatible with \"udp\"";
         }
+
+#if (NGX_HAVE_TRANSPARENT_PROXY && defined IP_TRANSPARENT)
+        if (ls->tproxy) {
+            ngx_core_conf_t *ccf;
+            ccf = (ngx_core_conf_t *) ngx_get_conf(cf->cycle->conf_ctx,
+                                                   ngx_core_module);
+            ccf->transparent = 1;
+        }
+#endif
     }
 
     als = cmcf->listen.elts;

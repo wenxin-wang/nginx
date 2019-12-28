@@ -90,6 +90,10 @@ struct ngx_listening_s {
     int                 fastopen;
 #endif
 
+#if (NGX_HAVE_TRANSPARENT_PROXY && defined IP_TRANSPARENT)
+    unsigned            tproxy:1;
+#endif
+
 };
 
 

@@ -435,6 +435,32 @@ ngx_feature_test="struct in_pktinfo  pkt;
 . auto/feature
 
 
+# Linux way to get transparent proxy IPV4 udp destination
+
+ngx_feature="IP_RECVORIGDSTADDR"
+ngx_feature_name="NGX_HAVE_IP_RECVORIGDSTADDR"
+ngx_feature_run=no
+ngx_feature_incs="#include <sys/socket.h>
+                  #include <netinet/in.h>"
+ngx_feature_path=
+ngx_feature_libs=
+ngx_feature_test="setsockopt(0, IPPROTO_IP, IP_RECVORIGDSTADDR, NULL, 0)"
+. auto/feature
+
+
+# Linux transparent proxying for IPv6
+
+ngx_feature="IPV6_TRANSPARENT"
+ngx_feature_name="NGX_HAVE_IPV6_TRANSPARENT_PROXY"
+ngx_feature_run=no
+ngx_feature_incs="#include <sys/socket.h>
+                  #include <netinet/in.h>"
+ngx_feature_path=
+ngx_feature_libs=
+ngx_feature_test="setsockopt(0, IPPROTO_IPV6, IPV6_TRANSPARENT, NULL, 0)"
+. auto/feature
+
+
 # RFC 3542 way to get IPv6 datagram destination address
 
 ngx_feature="IPV6_RECVPKTINFO"
@@ -445,6 +471,19 @@ ngx_feature_incs="#include <sys/socket.h>
 ngx_feature_path=
 ngx_feature_libs=
 ngx_feature_test="setsockopt(0, IPPROTO_IPV6, IPV6_RECVPKTINFO, NULL, 0)"
+. auto/feature
+
+
+# Linux way to get transparent proxy IPV6 udp destination
+
+ngx_feature="IPV6_RECVORIGDSTADDR"
+ngx_feature_name="NGX_HAVE_IPV6_RECVORIGDSTADDR"
+ngx_feature_run=no
+ngx_feature_incs="#include <sys/socket.h>
+                  #include <netinet/in.h>"
+ngx_feature_path=
+ngx_feature_libs=
+ngx_feature_test="setsockopt(0, IPPROTO_IPV6, IPV6_RECVORIGDSTADDR, NULL, 0)"
 . auto/feature
 
 

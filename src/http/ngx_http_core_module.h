@@ -82,6 +82,9 @@ typedef struct {
     unsigned                   reuseport:1;
     unsigned                   so_keepalive:2;
     unsigned                   proxy_protocol:1;
+#if (NGX_HAVE_TRANSPARENT_PROXY && defined IP_TRANSPARENT)
+    unsigned                   tproxy:1;
+#endif
 
     int                        backlog;
     int                        rcvbuf;

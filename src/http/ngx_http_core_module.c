@@ -3812,6 +3812,9 @@ ngx_http_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 #if (NGX_HAVE_INET6)
     lsopt.ipv6only = 1;
 #endif
+#if (NGX_HAVE_TRANSPARENT_PROXY && defined IP_TRANSPARENT)
+    lsopt.tproxy = 0;
+#endif
 
     for (n = 2; n < cf->args->nelts; n++) {
 
@@ -3931,6 +3934,17 @@ ngx_http_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                "the deferred accept is not supported "
                                "on this platform, ignored");
+#endif
+            continue;
+        }
+
+        if (ngx_strcmp(value[n].data, "tproxy") == 0) {
+#if (NGX_HAVE_TRANSPARENT_PROXY && defined IP_TRANSPARENT)
+            lsopt.tproxy = 1;
+#else
+            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                               "tproxy mode is not supported "
+                               "on this platform, ignore tproxy");
 #endif
             continue;
         }

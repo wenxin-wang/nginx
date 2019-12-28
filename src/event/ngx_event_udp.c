@@ -26,6 +26,8 @@ static ngx_int_t ngx_insert_udp_connection(ngx_connection_t *c);
 static ngx_connection_t *ngx_lookup_udp_connection(ngx_listening_t *ls,
     struct sockaddr *sockaddr, socklen_t socklen,
     struct sockaddr *local_sockaddr, socklen_t local_socklen);
+static ngx_socket_t ngx_get_udp_response_socket(ngx_connection_t *lc,
+    struct sockaddr *local_sockaddr, socklen_t local_socklen, ngx_log_t *log);
 
 
 void
@@ -45,16 +47,23 @@ ngx_event_recvmsg(ngx_event_t *ev)
     ngx_event_conf_t  *ecf;
     ngx_connection_t  *c, *lc;
     static u_char      buffer[65535];
+    ngx_socket_t       resp_fd;
 
 #if (NGX_HAVE_MSGHDR_MSG_CONTROL)
 
-#if (NGX_HAVE_IP_RECVDSTADDR)
+#if (NGX_HAVE_TRANSPARENT_PROXY && defined(IP_TRANSPARENT) \
+       && NGX_HAVE_IP_RECVORIGDSTADDR)
+    u_char             msg_control[CMSG_SPACE(sizeof(struct sockaddr_in))];
+#elif (NGX_HAVE_IP_RECVDSTADDR)
     u_char             msg_control[CMSG_SPACE(sizeof(struct in_addr))];
 #elif (NGX_HAVE_IP_PKTINFO)
     u_char             msg_control[CMSG_SPACE(sizeof(struct in_pktinfo))];
 #endif
 
-#if (NGX_HAVE_INET6 && NGX_HAVE_IPV6_RECVPKTINFO)
+#if (NGX_HAVE_IPV6_TRANSPARENT_PROXY && defined(IPV6_TRANSPARENT) \
+       && NGX_HAVE_IPV6_RECVORIGDSTADDR)
+    u_char             msg_control6[CMSG_SPACE(sizeof(struct sockaddr_in6))];
+#elif (NGX_HAVE_INET6 && NGX_HAVE_IPV6_RECVPKTINFO)
     u_char             msg_control6[CMSG_SPACE(sizeof(struct in6_pktinfo))];
 #endif
 
@@ -111,6 +120,22 @@ ngx_event_recvmsg(ngx_event_t *ev)
 #endif
         }
 
+#if (NGX_HAVE_TRANSPARENT_PROXY && defined(IP_TRANSPARENT) \
+     && NGX_HAVE_IP_RECVORIGDSTADDR)
+        if (ls->tproxy && ls->sockaddr->sa_family == AF_INET) {
+            msg.msg_control = &msg_control;
+            msg.msg_controllen = sizeof(msg_control);
+        }
+#endif
+
+#if (NGX_HAVE_IPV6_TRANSPARENT_PROXY && defined(IPV6_TRANSPARENT) \
+     && NGX_HAVE_IPV6_RECVORIGDSTADDR)
+        if (ls->tproxy && ls->sockaddr->sa_family == AF_INET6) {
+            msg.msg_control = &msg_control6;
+            msg.msg_controllen = sizeof(msg_control6);
+        }
+#endif
+
 #endif
 
         n = recvmsg(lc->fd, &msg, 0);
@@ -161,7 +186,23 @@ ngx_event_recvmsg(ngx_event_t *ev)
 
 #if (NGX_HAVE_MSGHDR_MSG_CONTROL)
 
-        if (ls->wildcard) {
+        int need_cmsg_local_sockaddr = ls->wildcard;
+
+#if (NGX_HAVE_TRANSPARENT_PROXY && defined(IP_TRANSPARENT) \
+     && NGX_HAVE_IP_RECVORIGDSTADDR)
+        if (ls->tproxy && local_sockaddr->sa_family == AF_INET) {
+            need_cmsg_local_sockaddr = 1;
+        }
+#endif
+
+#if (NGX_HAVE_IPV6_TRANSPARENT_PROXY && defined(IPV6_TRANSPARENT) \
+     && NGX_HAVE_IPV6_RECVORIGDSTADDR)
+        if (ls->tproxy && local_sockaddr->sa_family == AF_INET6) {
+            need_cmsg_local_sockaddr = 1;
+        }
+#endif
+
+        if (need_cmsg_local_sockaddr) {
             struct cmsghdr  *cmsg;
 
             ngx_memcpy(&lsa, local_sockaddr, local_socklen);
@@ -206,6 +247,26 @@ ngx_event_recvmsg(ngx_event_t *ev)
 
 #endif
 
+#if (NGX_HAVE_TRANSPARENT_PROXY && defined(IP_TRANSPARENT) \
+     && NGX_HAVE_IP_RECVORIGDSTADDR)
+
+                if (ls->tproxy
+                    && cmsg->cmsg_level == IPPROTO_IP
+                    && cmsg->cmsg_type == IP_ORIGDSTADDR
+                    && local_sockaddr->sa_family == AF_INET)
+                {
+                    struct sockaddr_in  *sin_orig;
+                    struct sockaddr_in  *sin;
+
+                    sin_orig = (struct sockaddr_in *) CMSG_DATA(cmsg);
+                    sin = (struct sockaddr_in *) local_sockaddr;
+                    *sin = *sin_orig;
+
+                    break;
+                }
+
+#endif
+
 #if (NGX_HAVE_INET6 && NGX_HAVE_IPV6_RECVPKTINFO)
 
                 if (cmsg->cmsg_level == IPPROTO_IPV6
@@ -218,6 +279,26 @@ ngx_event_recvmsg(ngx_event_t *ev)
                     pkt6 = (struct in6_pktinfo *) CMSG_DATA(cmsg);
                     sin6 = (struct sockaddr_in6 *) local_sockaddr;
                     sin6->sin6_addr = pkt6->ipi6_addr;
+
+                    break;
+                }
+
+#endif
+
+#if (NGX_HAVE_IPV6_TRANSPARENT_PROXY && defined(IPV6_TRANSPARENT) \
+     && NGX_HAVE_IPV6_RECVORIGDSTADDR)
+
+                if (ls->tproxy
+                    && cmsg->cmsg_level == IPPROTO_IPV6
+                    && cmsg->cmsg_type == IPV6_ORIGDSTADDR
+                    && local_sockaddr->sa_family == AF_INET6)
+                {
+                    struct sockaddr_in6  *sin6_orig;
+                    struct sockaddr_in6  *sin6;
+
+                    sin6_orig = (struct sockaddr_in6 *) CMSG_DATA(cmsg);
+                    sin6 = (struct sockaddr_in6 *) local_sockaddr;
+                    *sin6 = *sin6_orig;
 
                     break;
                 }
@@ -279,12 +360,14 @@ ngx_event_recvmsg(ngx_event_t *ev)
         ngx_accept_disabled = ngx_cycle->connection_n / 8
                               - ngx_cycle->free_connection_n;
 
-        c = ngx_get_connection(lc->fd, ev->log);
+        resp_fd = ngx_get_udp_response_socket(lc, local_sockaddr,
+                                              local_socklen, ev->log);
+        c = ngx_get_connection(resp_fd, ev->log);
         if (c == NULL) {
             return;
         }
 
-        c->shared = 1;
+        c->shared = (resp_fd == lc->fd);
         c->type = SOCK_DGRAM;
         c->socklen = socklen;
 
@@ -650,6 +733,101 @@ ngx_lookup_udp_connection(ngx_listening_t *ls, struct sockaddr *sockaddr,
     }
 
     return NULL;
+}
+
+ngx_socket_t
+ngx_get_udp_response_socket(ngx_connection_t *lc,
+    struct sockaddr *local_sockaddr, socklen_t local_socklen, ngx_log_t *log)
+{
+    ngx_listening_t *ls = lc->listening;
+    ngx_socket_t s;
+    int need_new = 0;
+
+#if (NGX_HAVE_TRANSPARENT_PROXY && defined(IP_TRANSPARENT) \
+     && NGX_HAVE_IP_RECVORIGDSTADDR)
+    if (ls->tproxy && ls->sockaddr->sa_family == AF_INET) {
+        need_new = 1;
+    }
+#endif
+
+#if (NGX_HAVE_IPV6_TRANSPARENT_PROXY && defined(IPV6_TRANSPARENT) \
+     && NGX_HAVE_IPV6_RECVORIGDSTADDR)
+    if (ls->tproxy && ls->sockaddr->sa_family == AF_INET6) {
+        need_new = 1;
+    }
+#endif
+
+    if (!need_new) return lc->fd;
+
+    s = ngx_socket(local_sockaddr->sa_family, SOCK_DGRAM, 0);
+
+    if (s == (ngx_socket_t) -1) {
+        ngx_log_error(NGX_LOG_EMERG, log, ngx_socket_errno,
+                      ngx_socket_n " udp resp failed");
+        return lc->fd;
+    }
+
+#if (NGX_HAVE_TRANSPARENT_PROXY && defined IP_TRANSPARENT)
+    if (ls->tproxy && local_sockaddr->sa_family == AF_INET) {
+        int  transparent = 1;
+
+        if (setsockopt(s, IPPROTO_IP, IP_TRANSPARENT,
+                       (const void *) &transparent, sizeof(int))
+            == -1)
+        {
+            ngx_log_error(NGX_LOG_EMERG, log, ngx_socket_errno,
+                          "udp resp setsockopt(IP_TRANSPARENT) failed");
+            if (ngx_close_socket(s) == -1) {
+                ngx_log_error(NGX_LOG_EMERG, log, ngx_socket_errno,
+                              ngx_close_socket_n " failed udp resp");
+            }
+            return lc->fd;
+        }
+    }
+#endif
+
+#if (NGX_HAVE_IPV6_TRANSPARENT_PROXY && defined IPV6_TRANSPARENT)
+    if (ls->tproxy && local_sockaddr->sa_family == AF_INET6) {
+        int transparent = 1;
+
+        if (setsockopt(s, IPPROTO_IPV6, IPV6_TRANSPARENT,
+                       (const void *) &transparent, sizeof(int))
+            == -1)
+        {
+            ngx_log_error(NGX_LOG_EMERG, log, ngx_socket_errno,
+                          "udp resp setsockopt(IPV6_TRANSPARENT) failed");
+            if (ngx_close_socket(s) == -1) {
+                ngx_log_error(NGX_LOG_EMERG, log, ngx_socket_errno,
+                              ngx_close_socket_n " failed udp resp");
+            }
+            return lc->fd;
+        }
+    }
+#endif
+
+#if (NGX_HAVE_REUSEPORT)
+    if (ls->tproxy) {
+        int reuseport = 1;
+        if (setsockopt(s, SOL_SOCKET, SO_REUSEPORT,
+                       (const void *) &reuseport, sizeof(int))
+            == -1)
+        {
+            ngx_log_error(NGX_LOG_ALERT, log, ngx_socket_errno,
+                          "udp resp setsockopt(SO_REUSEPORT) failed, ignored");
+        }
+    }
+#endif
+
+    if (bind(s, local_sockaddr, local_socklen) == -1) {
+        ngx_log_error(NGX_LOG_EMERG, log, ngx_socket_errno,
+                      "udp resp bind failed, ignored");
+        if (ngx_close_socket(s) == -1) {
+            ngx_log_error(NGX_LOG_EMERG, log, ngx_socket_errno,
+                          ngx_close_socket_n " failed udp resp bind");
+        }
+        return lc->fd;
+    }
+    return s;
 }
 
 #else
