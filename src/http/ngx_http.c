@@ -1745,6 +1745,10 @@ ngx_http_add_listening(ngx_conf_t *cf, ngx_http_conf_addr_t *addr)
     ls->tproxy = addr->opt.tproxy;
 #endif
 
+#if (NGX_HAVE_SETNS)
+    ls->netns = addr->opt.netns;
+#endif
+
 #if (NGX_HAVE_KEEPALIVE_TUNABLE)
     ls->keepidle = addr->opt.tcp_keepidle;
     ls->keepintvl = addr->opt.tcp_keepintvl;

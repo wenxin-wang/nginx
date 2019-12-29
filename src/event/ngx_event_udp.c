@@ -759,6 +759,7 @@ ngx_get_udp_response_socket(ngx_connection_t *lc,
 
     if (!need_new) return lc->fd;
 
+    // After experiment, it seems that netns can be safely ignored here
     s = ngx_socket(local_sockaddr->sa_family, SOCK_DGRAM, 0);
 
     if (s == (ngx_socket_t) -1) {

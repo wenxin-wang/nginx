@@ -3815,6 +3815,9 @@ ngx_http_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 #if (NGX_HAVE_TRANSPARENT_PROXY && defined IP_TRANSPARENT)
     lsopt.tproxy = 0;
 #endif
+#if (NGX_HAVE_SETNS)
+    lsopt.netns = NULL;
+#endif
 
     for (n = 2; n < cf->args->nelts; n++) {
 
@@ -3945,6 +3948,20 @@ ngx_http_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                "tproxy mode is not supported "
                                "on this platform, ignore tproxy");
+#endif
+            continue;
+        }
+
+        if (ngx_strncmp(value[n].data, "netns=", 6) == 0) {
+#if (NGX_HAVE_SETNS)
+            unsigned str_length = value[n].len - 6 + 1;
+            lsopt.netns = ngx_pnalloc(cf->pool, str_length);
+            ngx_cpystrn((unsigned char *)lsopt.netns, value[n].data + 6, str_length);
+#else
+            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                               "netns is not supported "
+                               "on this platform, ignore \"%V\"",
+                               &value[n]);
 #endif
             continue;
         }

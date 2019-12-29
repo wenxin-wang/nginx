@@ -487,6 +487,19 @@ ngx_feature_test="setsockopt(0, IPPROTO_IPV6, IPV6_RECVORIGDSTADDR, NULL, 0)"
 . auto/feature
 
 
+# Linux setns
+
+ngx_feature="setns()"
+ngx_feature_name="NGX_HAVE_SETNS"
+ngx_feature_run=no
+ngx_feature_incs="#define _GNU_SOURCE
+                  #include <sched.h>"
+ngx_feature_path=
+ngx_feature_libs=
+ngx_feature_test="setns(0, 0)"
+. auto/feature
+
+
 ngx_feature="TCP_DEFER_ACCEPT"
 ngx_feature_name="NGX_HAVE_DEFERRED_ACCEPT"
 ngx_feature_run=no

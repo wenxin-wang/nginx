@@ -94,6 +94,10 @@ struct ngx_listening_s {
     unsigned            tproxy:1;
 #endif
 
+#if (NGX_HAVE_SETNS)
+    char               *netns;
+#endif
+
 };
 
 

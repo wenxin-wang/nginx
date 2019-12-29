@@ -505,6 +505,10 @@ ngx_stream_optimize_servers(ngx_conf_t *cf, ngx_array_t *ports)
             ls->tproxy = addr[i].opt.tproxy;
 #endif
 
+#if (NGX_HAVE_SETNS)
+            ls->netns = addr[i].opt.netns;
+#endif
+
 #if (NGX_HAVE_KEEPALIVE_TUNABLE)
             ls->keepidle = addr[i].opt.tcp_keepidle;
             ls->keepintvl = addr[i].opt.tcp_keepintvl;

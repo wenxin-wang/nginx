@@ -85,6 +85,9 @@ typedef struct {
 #if (NGX_HAVE_TRANSPARENT_PROXY && defined IP_TRANSPARENT)
     unsigned                   tproxy:1;
 #endif
+#if (NGX_HAVE_SETNS)
+    char                      *netns;
+#endif
 
     int                        backlog;
     int                        rcvbuf;

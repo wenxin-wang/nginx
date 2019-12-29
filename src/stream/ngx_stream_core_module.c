@@ -623,6 +623,10 @@ ngx_stream_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ls->tproxy = 0;
 #endif
 
+#if (NGX_HAVE_SETNS)
+    ls->netns = NULL;
+#endif
+
     backlog = 0;
 
     for (i = 2; i < cf->args->nelts; i++) {
@@ -692,6 +696,20 @@ ngx_stream_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                "transparent mode is not supported "
                                "on this platform, ignore tproxy");
+#endif
+            continue;
+        }
+
+        if (ngx_strncmp(value[i].data, "netns=", 6) == 0) {
+#if (NGX_HAVE_SETNS)
+            unsigned str_length = value[i].len - 6 + 1;
+            ls->netns = ngx_pnalloc(cf->pool, str_length);
+            ngx_cpystrn((unsigned char*)ls->netns, value[i].data + 6, str_length);
+#else
+            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                               "netns is not supported "
+                               "on this platform, ignore \"%V\"",
+                               &value[i]);
 #endif
             continue;
         }

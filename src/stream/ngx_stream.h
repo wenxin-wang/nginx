@@ -60,6 +60,9 @@ typedef struct {
 #if (NGX_HAVE_TRANSPARENT_PROXY && defined IP_TRANSPARENT)
     unsigned                       tproxy:1;
 #endif
+#if (NGX_HAVE_SETNS)
+    char                          *netns;
+#endif
 #if (NGX_HAVE_KEEPALIVE_TUNABLE)
     int                            tcp_keepidle;
     int                            tcp_keepintvl;

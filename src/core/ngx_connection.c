@@ -487,7 +487,51 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
                 continue;
             }
 
+#if (NGX_HAVE_SETNS)
+            int orig_net_fd = -1;
+            do {
+                if (ls[i].netns == NULL) break;
+                char self_netns_path[PATH_MAX];
+                ngx_snprintf(self_netns_path, PATH_MAX, "/proc/%d/ns/net%Z", getpid());
+                orig_net_fd = open(self_netns_path, O_RDONLY);
+                if (orig_net_fd == -1) {
+                    ngx_log_error(NGX_LOG_EMERG, log, ngx_errno,
+                                  "setns %s failed: %s orig_net",
+                                  ls[i].netns, self_netns_path);
+                    break;
+	        }
+                char tgt_netns_path[PATH_MAX];
+                ngx_snprintf(tgt_netns_path, PATH_MAX, "/var/run/netns/%s%Z", ls[i].netns);
+                int tgt_net_fd = open(tgt_netns_path, O_RDONLY);
+                if (tgt_net_fd == -1) {
+                    ngx_log_error(NGX_LOG_EMERG, log, ngx_errno,
+                                  "setns %s failed: %s tgt_net",
+                                  ls[i].netns, tgt_netns_path);
+                    close(orig_net_fd);
+                    orig_net_fd = -1;
+                    break;
+	        }
+	        if (setns(tgt_net_fd, CLONE_NEWNET) == -1) {
+                    ngx_log_error(NGX_LOG_EMERG, log, ngx_errno,
+                                  "setns %s failed: syscall tgt",
+                                  ls[i].netns);
+                    close(orig_net_fd);
+                    orig_net_fd = -1;
+	        }
+                close(tgt_net_fd);
+	    } while (0);
+#endif
             s = ngx_socket(ls[i].sockaddr->sa_family, ls[i].type, 0);
+#if (NGX_HAVE_SETNS)
+            if (orig_net_fd != -1) {
+	        if (setns(orig_net_fd, CLONE_NEWNET) == -1) {
+                    ngx_log_error(NGX_LOG_EMERG, log, ngx_errno,
+                                  "setns %s failed: syscall orig",
+                                  ls[i].netns);
+	        }
+	        close(orig_net_fd);
+	    }
+#endif
 
             if (s == (ngx_socket_t) -1) {
                 ngx_log_error(NGX_LOG_EMERG, log, ngx_socket_errno,
