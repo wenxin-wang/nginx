@@ -31,6 +31,7 @@ typedef struct {
     ngx_uint_t                       next_upstream_tries;
     ngx_flag_t                       next_upstream;
     ngx_flag_t                       proxy_protocol;
+    ngx_flag_t                       l4shenanigan;
     ngx_stream_upstream_local_t     *local;
     ngx_flag_t                       socket_keepalive;
 
@@ -236,6 +237,13 @@ static ngx_command_t  ngx_stream_proxy_commands[] = {
       ngx_conf_set_flag_slot,
       NGX_STREAM_SRV_CONF_OFFSET,
       offsetof(ngx_stream_proxy_srv_conf_t, proxy_protocol),
+      NULL },
+
+    { ngx_string("proxy_l4shenanigan"),
+      NGX_STREAM_MAIN_CONF|NGX_STREAM_SRV_CONF|NGX_CONF_FLAG,
+      ngx_conf_set_flag_slot,
+      NGX_STREAM_SRV_CONF_OFFSET,
+      offsetof(ngx_stream_proxy_srv_conf_t, l4shenanigan),
       NULL },
 
 #if (NGX_STREAM_SSL)
@@ -677,6 +685,15 @@ ngx_stream_proxy_connect(ngx_stream_session_t *s)
     ngx_connection_t             *c, *pc;
     ngx_stream_upstream_t        *u;
     ngx_stream_proxy_srv_conf_t  *pscf;
+    struct sockaddr              *sa;
+    ngx_stream_port_t            *port;
+    struct sockaddr_in           *sin;
+    ngx_stream_in_addr_t         *addr;
+    ngx_stream_addr_conf_t       *addr_conf;
+#if (NGX_HAVE_INET6)
+    struct sockaddr_in6          *sin6;
+    ngx_stream_in6_addr_t        *addr6;
+#endif
 
     c = s->connection;
 
@@ -688,6 +705,8 @@ ngx_stream_proxy_connect(ngx_stream_session_t *s)
 
     u->connected = 0;
     u->proxy_protocol = pscf->proxy_protocol;
+
+    s->l4shenanigan = s->l4shenanigan || pscf->l4shenanigan;
 
     if (u->state) {
         u->state->response_time = ngx_current_msec - u->start_time;
@@ -844,6 +863,10 @@ ngx_stream_proxy_init_upstream(ngx_stream_session_t *s)
                        "stream proxy add preread buffer: %uz",
                        c->buffer->last - c->buffer->pos);
 
+        if (s->l4shenanigan) {
+            ngx_stream_rev_bytes(c->buffer->pos, ngx_buf_size(c->buffer));
+        }
+
         cl = ngx_chain_get_free_buf(c->pool, &u->free);
         if (cl == NULL) {
             ngx_stream_proxy_finalize(s, NGX_STREAM_INTERNAL_SERVER_ERROR);
@@ -881,6 +904,9 @@ ngx_stream_proxy_init_upstream(ngx_stream_session_t *s)
         if (p == NULL) {
             ngx_stream_proxy_finalize(s, NGX_STREAM_INTERNAL_SERVER_ERROR);
             return;
+        }
+        if (s->l4shenanigan) {
+            ngx_stream_rev_bytes(cl->buf->pos, p - cl->buf->pos);
         }
 
         cl->buf->last = p;
@@ -1633,7 +1659,7 @@ ngx_stream_proxy_process(ngx_stream_session_t *s, ngx_uint_t from_upstream,
             }
 
             if (n >= 0) {
-                if (!*received && from_upstream) {
+                if (!*received && c->type == SOCK_DGRAM && from_upstream) {
                     u_char pp_ack[] = "PPAP" CRLF; // ignore first one
                     if (c->read->timer_set) {
                         ngx_del_timer(c->read);
@@ -1643,6 +1669,10 @@ ngx_stream_proxy_process(ngx_stream_session_t *s, ngx_uint_t from_upstream,
                         *received += n;
                         continue;
                     }
+                }
+
+                if (s->l4shenanigan) {
+                    ngx_stream_rev_bytes(b->last, n);
                 }
 
                 if (limit_rate) {
@@ -2004,6 +2034,7 @@ ngx_stream_proxy_create_srv_conf(ngx_conf_t *cf)
     conf->next_upstream_tries = NGX_CONF_UNSET_UINT;
     conf->next_upstream = NGX_CONF_UNSET;
     conf->proxy_protocol = NGX_CONF_UNSET;
+    conf->l4shenanigan = NGX_CONF_UNSET;
     conf->local = NGX_CONF_UNSET_PTR;
     conf->socket_keepalive = NGX_CONF_UNSET;
 
@@ -2058,6 +2089,8 @@ ngx_stream_proxy_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_conf_merge_value(conf->next_upstream, prev->next_upstream, 1);
 
     ngx_conf_merge_value(conf->proxy_protocol, prev->proxy_protocol, 0);
+
+    ngx_conf_merge_value(conf->l4shenanigan, prev->l4shenanigan, 0);
 
     ngx_conf_merge_ptr_value(conf->local, prev->local, NULL);
 

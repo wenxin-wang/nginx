@@ -583,6 +583,7 @@ ngx_stream_add_addrs(ngx_conf_t *cf, ngx_stream_port_t *stport,
 #endif
         addrs[i].conf.proxy_protocol = addr[i].opt.proxy_protocol;
         addrs[i].conf.addr_text = addr[i].opt.addr_text;
+        addrs[i].conf.l4shenanigan = addr[i].opt.l4shenanigan;
     }
 
     return NGX_OK;
@@ -618,6 +619,7 @@ ngx_stream_add_addrs6(ngx_conf_t *cf, ngx_stream_port_t *stport,
 #endif
         addrs6[i].conf.proxy_protocol = addr[i].opt.proxy_protocol;
         addrs6[i].conf.addr_text = addr[i].opt.addr_text;
+        addrs6[i].conf.l4shenanigan = addr[i].opt.l4shenanigan;
     }
 
     return NGX_OK;

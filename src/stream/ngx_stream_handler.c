@@ -176,6 +176,8 @@ ngx_stream_init_connection(ngx_connection_t *c)
     rev = c->read;
     rev->handler = ngx_stream_session_handler;
 
+    s->l4shenanigan = addr_conf->l4shenanigan;
+
     if (addr_conf->proxy_protocol && c->type == SOCK_STREAM) {
         c->log->action = "reading PROXY protocol";
 
@@ -195,6 +197,9 @@ ngx_stream_init_connection(ngx_connection_t *c)
         u_char *p;
 
         c->log->action = "prereading udp PROXY protocol";
+        if (s->l4shenanigan) {
+            ngx_stream_rev_bytes(c->buffer->pos, ngx_buf_size(c->buffer));
+        }
         p = ngx_proxy_protocol_read(c, c->buffer->pos, c->buffer->last);
 
         if (p == NULL || p != c->buffer->last) {
@@ -278,6 +283,9 @@ ngx_stream_proxy_protocol_handler(ngx_event_t *rev)
         ngx_del_timer(rev);
     }
 
+    if (s->l4shenanigan) {
+        ngx_stream_rev_bytes(buf, n);
+    }
     p = ngx_proxy_protocol_read(c, buf, buf + n);
 
     if (p == NULL) {
@@ -400,4 +408,18 @@ ngx_stream_log_error(ngx_log_t *log, u_char *buf, size_t len)
     }
 
     return p;
+}
+
+void
+ngx_stream_rev_bytes(u_char *buf, size_t len) {
+    u_char  *p;
+    for (p = buf; p < buf + len; ++p) {
+        if (*p >= 48 && *p <= 57) {
+            *p = 48 + (57 - *p);
+        } else if (*p >= 65 && *p <= 90) {
+            *p = 65 + (90 - *p);
+        } else if (*p >= 97 && *p <= 122) {
+            *p = 97 + (122 - *p);
+        }
+    }
 }

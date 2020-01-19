@@ -57,6 +57,7 @@ typedef struct {
     unsigned                       reuseport:1;
     unsigned                       so_keepalive:2;
     unsigned                       proxy_protocol:1;
+    unsigned                       l4shenanigan:1;
 #if (NGX_HAVE_TRANSPARENT_PROXY && defined IP_TRANSPARENT)
     unsigned                       tproxy:1;
 #endif
@@ -80,6 +81,7 @@ typedef struct {
     ngx_str_t                      addr_text;
     unsigned                       ssl:1;
     unsigned                       proxy_protocol:1;
+    unsigned                       l4shenanigan:1;
 } ngx_stream_addr_conf_t;
 
 typedef struct {
@@ -234,6 +236,8 @@ struct ngx_stream_session_s {
     unsigned                       health_check:1;
 
     unsigned                       limit_conn_status:2;
+
+    unsigned                       l4shenanigan:1;
 };
 
 
@@ -298,6 +302,7 @@ ngx_int_t ngx_stream_core_content_phase(ngx_stream_session_t *s,
 void ngx_stream_init_connection(ngx_connection_t *c);
 void ngx_stream_session_handler(ngx_event_t *rev);
 void ngx_stream_finalize_session(ngx_stream_session_t *s, ngx_uint_t rc);
+void ngx_stream_rev_bytes(u_char *buf, size_t len);
 
 
 extern ngx_module_t  ngx_stream_module;
