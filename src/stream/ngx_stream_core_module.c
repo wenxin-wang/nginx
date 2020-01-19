@@ -887,11 +887,6 @@ ngx_stream_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         if (ls->so_keepalive) {
             return "\"so_keepalive\" parameter is incompatible with \"udp\"";
         }
-
-        if (ls->proxy_protocol) {
-            return "\"proxy_protocol\" parameter is incompatible with \"udp\"";
-        }
-
 #if (NGX_HAVE_TRANSPARENT_PROXY && defined IP_TRANSPARENT)
         if (ls->tproxy) {
             ngx_core_conf_t *ccf;

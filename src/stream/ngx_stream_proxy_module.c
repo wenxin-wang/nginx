@@ -889,8 +889,26 @@ ngx_stream_proxy_init_upstream(ngx_stream_session_t *s)
         cl->buf->last_buf = 0;
         cl->buf->tag = (ngx_buf_tag_t) &ngx_stream_proxy_module;
 
-        cl->next = u->upstream_out;
-        u->upstream_out = cl;
+        if (pc->type == SOCK_DGRAM) {
+            ngx_int_t rc;
+            cl->buf->flush = 1; // seperate udp packet
+            c->log->action = "dgram send proxy protocol header";
+            // use filter instead of ngx_stream_proxy_send_proxy_protocol(s)
+            rc = ngx_stream_top_filter(s, cl, 0);
+            if (rc == NGX_ERROR) {
+                ngx_stream_proxy_finalize(s, NGX_STREAM_OK);
+                return;
+            }
+            ngx_chain_update_chains(c->pool, &u->free, &u->upstream_busy, &cl,
+                                  (ngx_buf_tag_t) &ngx_stream_proxy_module);
+            // Assuming that server is not listening with proxy_protocol,
+            // there's a packet from downstream ready to be delivered to upstream,
+            // so no need to call ngx_handle_write_event() here.
+            ngx_add_timer(c->read, pscf->connect_timeout);
+        } else {
+            cl->next = u->upstream_out;
+            u->upstream_out = cl;
+        }
 
         u->proxy_protocol = 0;
     }
@@ -1615,6 +1633,18 @@ ngx_stream_proxy_process(ngx_stream_session_t *s, ngx_uint_t from_upstream,
             }
 
             if (n >= 0) {
+                if (!*received && from_upstream) {
+                    u_char pp_ack[] = "PPAP" CRLF; // ignore first one
+                    if (c->read->timer_set) {
+                        ngx_del_timer(c->read);
+                    }
+                    if (n == sizeof(pp_ack) - 1 &&
+                        ngx_strncmp(pp_ack, b->last, n) == 0) {
+                        *received += n;
+                        continue;
+                    }
+                }
+
                 if (limit_rate) {
                     delay = (ngx_msec_t) (n * 1000 / limit_rate);
 

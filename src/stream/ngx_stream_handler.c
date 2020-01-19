@@ -176,7 +176,7 @@ ngx_stream_init_connection(ngx_connection_t *c)
     rev = c->read;
     rev->handler = ngx_stream_session_handler;
 
-    if (addr_conf->proxy_protocol) {
+    if (addr_conf->proxy_protocol && c->type == SOCK_STREAM) {
         c->log->action = "reading PROXY protocol";
 
         rev->handler = ngx_stream_proxy_protocol_handler;
@@ -190,6 +190,24 @@ ngx_stream_init_connection(ngx_connection_t *c)
             }
 
             return;
+        }
+    } else if (addr_conf->proxy_protocol && c->type == SOCK_DGRAM) {
+        u_char *p;
+
+        c->log->action = "prereading udp PROXY protocol";
+        p = ngx_proxy_protocol_read(c, c->buffer->pos, c->buffer->last);
+
+        if (p == NULL || p != c->buffer->last) {
+            ngx_stream_finalize_session(s, NGX_STREAM_BAD_REQUEST);
+            return;
+        }
+
+        c->buffer->pos = p;
+        if (c->write->ready) {
+            u_char pp_ack[] = "PPAP" CRLF;
+            ngx_uint_t rc;
+            rc = c->send(c, pp_ack, sizeof(pp_ack) - 1);
+            // TODO: should we call ngx_handle_write_event() here?
         }
     }
 
