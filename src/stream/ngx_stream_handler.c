@@ -202,17 +202,14 @@ ngx_stream_init_connection(ngx_connection_t *c)
         }
         p = ngx_proxy_protocol_read(c, c->buffer->pos, c->buffer->last);
 
-        if (p == NULL || p != c->buffer->last) {
+        if (p == NULL) {
             ngx_stream_finalize_session(s, NGX_STREAM_BAD_REQUEST);
             return;
         }
 
         c->buffer->pos = p;
-        if (c->write->ready) {
-            u_char pp_ack[] = "PPAP" CRLF;
-            ngx_uint_t rc;
-            rc = c->send(c, pp_ack, sizeof(pp_ack) - 1);
-            // TODO: should we call ngx_handle_write_event() here?
+        if (s->l4shenanigan) {
+            ngx_stream_rev_bytes(c->buffer->pos, ngx_buf_size(c->buffer));
         }
     }
 

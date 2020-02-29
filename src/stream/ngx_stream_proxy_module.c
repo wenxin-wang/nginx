@@ -917,7 +917,7 @@ ngx_stream_proxy_init_upstream(ngx_stream_session_t *s)
 
         if (pc->type == SOCK_DGRAM) {
             ngx_int_t rc;
-            cl->buf->flush = 1; // seperate udp packet
+            cl->buf->flush = 0; // no seperate udp packet
             c->log->action = "dgram send proxy protocol header";
             // use filter instead of ngx_stream_proxy_send_proxy_protocol(s)
             rc = ngx_stream_top_filter(s, cl, 0);
@@ -1659,18 +1659,6 @@ ngx_stream_proxy_process(ngx_stream_session_t *s, ngx_uint_t from_upstream,
             }
 
             if (n >= 0) {
-                if (!*received && c->type == SOCK_DGRAM && from_upstream) {
-                    u_char pp_ack[] = "PPAP" CRLF; // ignore first one
-                    if (c->read->timer_set) {
-                        ngx_del_timer(c->read);
-                    }
-                    if (n == sizeof(pp_ack) - 1 &&
-                        ngx_strncmp(pp_ack, b->last, n) == 0) {
-                        *received += n;
-                        continue;
-                    }
-                }
-
                 if (s->l4shenanigan) {
                     ngx_stream_rev_bytes(b->last, n);
                 }
